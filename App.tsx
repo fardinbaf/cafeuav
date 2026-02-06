@@ -1,5 +1,5 @@
+
 import React, { useEffect, useState, Suspense } from 'react';
-// @google/genai Coding Guidelines: Using standard react-router-dom v6 exports
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Dashboard from './Dashboard';
