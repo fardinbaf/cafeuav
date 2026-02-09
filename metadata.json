@@ -1,0 +1,19 @@
+{
+  "name": "Cafe UAV 🍽️",
+  "short_name": "UAV POS",
+  "description": "Premium Canteen Management System for LAC Zubayer.",
+  "icons": [
+    {
+      "src": "https://images4.imagebam.com/12/4d/21/ME1ACODF_o.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#4f46e5",
+  "background_color": "#f8fafc",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
