@@ -1,4 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, supabase } from '../db';
 import { Transaction, Customer } from '../types';
@@ -49,7 +51,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ transaction, onClose }) => 
     return isSir ? `${customer.name} Sir` : customer.name;
   };
 
-  return (
+  const modalContent = (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-2xl animate-fade-in no-print">
       <div className="bg-white w-full max-w-sm rounded-[64px] shadow-[0_50px_100px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col max-h-[90vh]">
         <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
@@ -84,7 +86,7 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ transaction, onClose }) => 
                   <span>TOTAL</span>
                 </div>
                 <div className="space-y-4">
-                  {transaction.items?.map((item, i) => (
+                  {(transaction.items || []).map((item, i) => (
                     <div key={i} className="flex justify-between items-start text-[11px]">
                       <div className="pr-4">
                         <div className="font-black uppercase leading-tight">{item.item_name}</div>
@@ -135,6 +137,8 @@ const ReceiptModal: React.FC<ReceiptModalProps> = ({ transaction, onClose }) => 
       `}</style>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };
 
 export default ReceiptModal;

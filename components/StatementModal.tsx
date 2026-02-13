@@ -1,7 +1,8 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../db';
-import { Customer, Transaction, InventoryItem, PaymentType } from '../types';
+import { Customer, Transaction, PaymentType, InventoryItem } from '../types';
 import { X, Printer, Share2, Calculator, Loader2 } from 'lucide-react';
 
 interface StatementModalProps {
@@ -12,6 +13,7 @@ interface StatementModalProps {
 const StatementModal: React.FC<StatementModalProps> = ({ customer: initialCustomer, onClose }) => {
   const [settings, setSettings] = useState<any>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [customer, setCustomer] = useState<Customer>(initialCustomer);
   const [loading, setLoading] = useState(true);
 
@@ -22,16 +24,19 @@ const StatementModal: React.FC<StatementModalProps> = ({ customer: initialCustom
         const [
           { data: configData },
           { data: transData },
-          { data: freshCust }
+          { data: freshCust },
+          { data: invData }
         ] = await Promise.all([
           supabase.from('settings').select('value').eq('key', 'config').single(),
           supabase.from('transactions').select('*').eq('customer_id', initialCustomer.id),
-          supabase.from('customers').select('*').eq('id', initialCustomer.id).single()
+          supabase.from('customers').select('*').eq('id', initialCustomer.id).single(),
+          supabase.from('inventory').select('*')
         ]);
 
         if (configData) setSettings(configData.value);
         if (transData) setTransactions(transData as Transaction[]);
         if (freshCust) setCustomer(freshCust as Customer);
+        if (invData) setInventory(invData as InventoryItem[]);
       } catch (err) {
         console.error("Statement fetch error:", err);
       } finally {
@@ -48,21 +53,46 @@ const StatementModal: React.FC<StatementModalProps> = ({ customer: initialCustom
 
   const displayName = customer.uid.length <= 5 ? `${customer.name} Sir` : customer.name;
 
-  const { processedItems, canteenFoodTotal, specialFunds, monthlyPayments } = useMemo(() => {
-    if (!transactions.length) return { processedItems: [], canteenFoodTotal: 0, specialFunds: { unitFund: 0, carWash: 0, others: 0 }, monthlyPayments: 0 };
+  const { processedItems, canteenFoodTotal, specialFunds, monthlyPayments, currentMonthBillTotal, totalOutstandingBalance } = useMemo(() => {
+    if (!transactions.length) return { processedItems: [], canteenFoodTotal: 0, specialFunds: { unitFund: 0, carWash: 0, others: 0 }, monthlyPayments: 0, currentMonthBillTotal: 0, totalOutstandingBalance: 0 };
     
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
 
+    // DYNAMIC BALANCE CALCULATION: Re-calculate all historical Baki based on *current* inventory prices
+    const lifeBalance = transactions.reduce((acc, t) => {
+      if (t.type === 'payment') return acc - Number(t.total_amount);
+      if (t.type === 'sale' && t.payment_type === PaymentType.BAKI) {
+        const currentPriceSum = t.items.reduce((iSum, item) => {
+          const livePrice = inventory.find(inv => inv.item_name === item.item_name)?.price ?? item.price;
+          return iSum + (livePrice * item.quantity);
+        }, 0);
+        return acc + currentPriceSum;
+      }
+      return acc;
+    }, 0);
+
     const thisMonthTrans = transactions.filter(t => t.timestamp >= startOfMonth.getTime());
-    const monthlyBakiSales = thisMonthTrans.filter(t => t.type === 'sale' && t.payment_type === PaymentType.BAKI);
-    const monthlyPaymentsSum = thisMonthTrans.filter(t => t.type === 'payment').reduce((acc, t) => acc + Number(t.total_amount), 0);
+    
+    const monthlyAllSales = thisMonthTrans.filter(t => t.type === 'sale');
+    const monthlyExplicitPayments = thisMonthTrans.filter(t => t.type === 'payment');
+    const monthlyUpfrontPayments = monthlyAllSales
+      .filter(t => t.payment_type !== PaymentType.BAKI)
+      .reduce((acc, t) => {
+        const currentPriceSum = t.items.reduce((iSum, item) => {
+          const livePrice = inventory.find(inv => inv.item_name === item.item_name)?.price ?? item.price;
+          return iSum + (livePrice * item.quantity);
+        }, 0);
+        return acc + currentPriceSum;
+      }, 0);
+    
+    const monthlyPaymentsSum = monthlyExplicitPayments.reduce((acc, t) => acc + Number(t.total_amount), 0) + monthlyUpfrontPayments;
     
     const itemMap = new Map<string, { name: string, qty: number, rate: number }>();
     const funds = { unitFund: 0, carWash: 0, others: 0 };
 
-    monthlyBakiSales.forEach(t => {
+    monthlyAllSales.forEach(t => {
       t.items.forEach(item => {
         if (item.item_name === 'Unit Fund') {
           funds.unitFund += (item.price * item.quantity);
@@ -71,12 +101,14 @@ const StatementModal: React.FC<StatementModalProps> = ({ customer: initialCustom
         } else if (item.item_name === 'Others') {
           funds.others += (item.price * item.quantity);
         } else {
-          const key = `${item.item_name}_${item.price}`;
+          // Dynamic lookup for item rate
+          const livePrice = inventory.find(inv => inv.item_name === item.item_name)?.price ?? item.price;
+          const key = `${item.item_name}_${livePrice}`;
           const existing = itemMap.get(key);
           if (existing) {
             existing.qty += item.quantity;
           } else {
-            itemMap.set(key, { name: item.item_name, qty: item.quantity, rate: item.price });
+            itemMap.set(key, { name: item.item_name, qty: item.quantity, rate: livePrice });
           }
         }
       });
@@ -87,20 +119,18 @@ const StatementModal: React.FC<StatementModalProps> = ({ customer: initialCustom
       total: data.qty * data.rate
     }));
 
+    const foodTotal = items.reduce((acc, i) => acc + i.total, 0);
+    const billTotal = foodTotal + funds.unitFund + funds.carWash + funds.others;
+
     return {
       processedItems: items,
-      canteenFoodTotal: items.reduce((acc, i) => acc + i.total, 0),
+      canteenFoodTotal: foodTotal,
       specialFunds: funds,
-      monthlyPayments: monthlyPaymentsSum
+      monthlyPayments: monthlyPaymentsSum,
+      currentMonthBillTotal: billTotal,
+      totalOutstandingBalance: lifeBalance
     };
-  }, [transactions]);
-
-  const totalBakiThisMonth = canteenFoodTotal + specialFunds.unitFund + specialFunds.carWash + specialFunds.others;
-  const previousArrears = useMemo(() => {
-    return Number(customer.total_baki) - (totalBakiThisMonth - monthlyPayments);
-  }, [customer.total_baki, totalBakiThisMonth, monthlyPayments]);
-
-  const grandTotal = Number(customer.total_baki);
+  }, [transactions, inventory]);
 
   const handlePrint = () => window.print();
 
@@ -115,11 +145,14 @@ const StatementModal: React.FC<StatementModalProps> = ({ customer: initialCustom
     if (specialFunds.unitFund > 0) message += `${index++}. ইউনিট ফান্ড: ৳${specialFunds.unitFund.toFixed(2)}\n`;
     if (specialFunds.carWash > 0) message += `${index++}. গাড়ি ওয়াশ: ৳${specialFunds.carWash.toFixed(2)}\n`;
     if (specialFunds.others > 0) message += `${index++}. অন্যান্য: ৳${specialFunds.others.toFixed(2)}\n`;
-    if (previousArrears !== 0) message += `${index++}. পূর্বের বকেয়া: ৳${previousArrears.toFixed(2)}\n`;
-    if (monthlyPayments > 0) message += `${index++}. পরিশোধ (এই মাস): -৳${monthlyPayments.toFixed(2)}\n`;
+    
+    message += `--------------------------\n` +
+      `চলতি মাসের মোট: ৳${currentMonthBillTotal.toFixed(2)}\n`;
+
+    if (monthlyPayments > 0) message += `পরিশোধ (এই মাস): -৳${monthlyPayments.toFixed(2)}\n`;
 
     message += `--------------------------\n` +
-      `*সর্বমোট প্রদেয়: ৳${grandTotal.toFixed(2)}*\n\n` +
+      `*সর্বমোট প্রদেয়: ৳${totalOutstandingBalance.toFixed(2)}*\n\n` +
       `অনুরোধক্রমে বিলটি পরিশোধ করার জন্য বলা হলো।\n` +
       `_${settings?.canteenName || 'CAFE UAV'}_`;
     
@@ -133,9 +166,9 @@ const StatementModal: React.FC<StatementModalProps> = ({ customer: initialCustom
     </div>
   );
 
-  return (
-    <div className="fixed inset-0 z-[200] flex justify-center items-start p-2 sm:p-4 bg-slate-900/80 backdrop-blur-md no-print overflow-y-auto pt-8 sm:pt-20">
-      <div className="bg-white w-full max-w-2xl rounded-[32px] md:rounded-[48px] shadow-2xl overflow-hidden flex flex-col h-auto mb-10 animate-in slide-in-from-top-4 duration-300">
+  const modalContent = (
+    <div className="fixed inset-0 z-[200] flex justify-center items-start p-2 sm:p-4 bg-slate-900/80 backdrop-blur-md no-print-overlay overflow-y-auto pt-8 sm:pt-20">
+      <div className="bg-white w-full max-w-2xl rounded-[32px] md:rounded-[48px] shadow-2xl overflow-hidden flex flex-col h-auto mb-10 animate-in slide-in-from-top-4 duration-300 print-modal-container">
         <div className="p-4 md:p-6 border-b border-slate-100 bg-slate-50 no-print flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-100 rounded-xl text-indigo-600 shadow-sm">
@@ -151,8 +184,8 @@ const StatementModal: React.FC<StatementModalProps> = ({ customer: initialCustom
           </button>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4 sm:p-10 md:p-14 bg-white printable-area">
-          <div className="max-w-2xl mx-auto font-serif text-black bg-white">
+        <div className="flex-1 p-4 sm:p-10 md:p-14 bg-white print-scroll-container">
+          <div className="max-w-2xl mx-auto font-serif text-black bg-white printable-area">
             <div className="text-center mb-8">
                <h1 className="text-3xl font-black uppercase mb-1">{settings?.canteenName || 'CAFE UAV'}</h1>
                <p className="text-[10px] font-bold uppercase tracking-widest border-b-2 border-black inline-block pb-1">মাসিক বিল বিবরণী</p>
@@ -190,7 +223,7 @@ const StatementModal: React.FC<StatementModalProps> = ({ customer: initialCustom
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={4} className="border-2 border-black p-2 text-center italic opacity-30 text-xs">No food items recorded this month</td>
+                    <td colSpan={4} className="border-2 border-black p-2 text-center italic opacity-30 text-xs">এই মাসে কোনো ক্যান্টিন খরচ নেই</td>
                   </tr>
                 )}
                 
@@ -219,14 +252,12 @@ const StatementModal: React.FC<StatementModalProps> = ({ customer: initialCustom
                     <td className="border-2 border-black p-2 text-right pr-4 font-bold">{specialFunds.others.toFixed(2)}</td>
                   </tr>
                 )}
-                
-                {previousArrears !== 0 && (
-                  <tr className="opacity-70 italic">
-                    <td colSpan={3} className="border-2 border-black p-2 text-center font-bold text-sm md:text-base">পূর্বের বকেয়া/ব্যালেন্স</td>
-                    <td className="border-2 border-black p-2 text-right pr-4 font-bold text-sm md:text-base">{previousArrears.toFixed(2)}</td>
-                  </tr>
-                )}
 
+                <tr className="bg-slate-100/50">
+                  <td colSpan={3} className="border-2 border-black p-2 text-center font-bold uppercase italic">চলতি মাসের মোট (Subtotal)</td>
+                  <td className="border-2 border-black p-2 text-right pr-4 font-black">{currentMonthBillTotal.toFixed(2)}</td>
+                </tr>
+                
                 {monthlyPayments > 0 && (
                   <tr className="text-emerald-700 italic">
                     <td colSpan={3} className="border-2 border-black p-2 text-center font-bold">পরিশোধ/জমা (চলতি মাস)</td>
@@ -234,9 +265,9 @@ const StatementModal: React.FC<StatementModalProps> = ({ customer: initialCustom
                   </tr>
                 )}
                 
-                <tr className="bg-slate-100 print:bg-transparent">
+                <tr className="bg-slate-200 print:bg-transparent">
                   <td colSpan={3} className="border-2 border-black p-2 md:p-3 text-center font-black text-lg md:text-xl uppercase">সর্বমোট প্রদেয়</td>
-                  <td className="border-2 border-black p-2 md:p-3 text-right pr-4 font-black text-lg md:text-xl">৳{grandTotal.toFixed(2)}</td>
+                  <td className="border-2 border-black p-2 md:p-3 text-right pr-4 font-black text-lg md:text-xl">৳{totalOutstandingBalance.toFixed(2)}</td>
                 </tr>
               </tbody>
             </table>
@@ -270,27 +301,48 @@ const StatementModal: React.FC<StatementModalProps> = ({ customer: initialCustom
       <style>{`
         @media print {
           @page { size: A4 portrait; margin: 10mm; }
-          body > #root { display: none !important; }
-          body { visibility: hidden !important; background: white !important; margin: 0 !important; padding: 0 !important; }
+          html, body { height: auto !important; overflow: visible !important; margin: 0 !important; padding: 0 !important; }
+          #root { display: none !important; }
           .no-print { display: none !important; }
-          .printable-area { 
-            visibility: visible !important; 
-            display: block !important;
+          .no-print-overlay { 
+            display: block !important; 
             position: absolute !important; 
-            left: 50% !important; 
             top: 0 !important; 
-            transform: translateX(-50%) !important;
+            left: 0 !important; 
             width: 100% !important; 
-            max-width: 170mm !important;
-            margin: 0 !important; 
-            padding: 0 !important; 
-            overflow: visible !important; 
+            height: auto !important;
+            background: white !important;
+            z-index: 1000 !important;
           }
-          .printable-area * { visibility: visible !important; }
+          .print-modal-container { 
+            position: relative !important; 
+            width: 100% !important; 
+            height: auto !important; 
+            max-width: none !important; 
+            box-shadow: none !important; 
+            border: none !important; 
+            background: white !important;
+            margin: 0 !important;
+          }
+          .print-scroll-container { 
+            display: block !important; 
+            overflow: visible !important; 
+            padding: 0 !important; 
+            background: white !important;
+          }
+          .printable-area { 
+            display: block !important; 
+            width: 100% !important; 
+            box-shadow: none !important; 
+            margin: 0 !important;
+            padding: 0 !important;
+          }
         }
       `}</style>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };
 
 export default StatementModal;

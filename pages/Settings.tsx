@@ -80,6 +80,10 @@ const SettingsPage: React.FC = () => {
                 <input required className="w-full px-5 py-4 rounded-2xl border bg-slate-800 text-white font-bold" value={settings.managerName} onChange={e => setSettings({...settings, managerName: e.target.value})} />
               </div>
               <div className="space-y-2">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-2 block">Admin Image URL</label>
+                <input className="w-full px-5 py-4 rounded-2xl border bg-slate-800 text-white text-sm" value={settings.managerImageUrl} onChange={e => setSettings({...settings, managerImageUrl: e.target.value})} />
+              </div>
+              <div className="space-y-2">
                 <label className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-2 block">WhatsApp Phone</label>
                 <input required className="w-full px-5 py-4 rounded-2xl border bg-slate-800 text-white font-bold" value={settings.managerPhone} onChange={e => setSettings({...settings, managerPhone: e.target.value})} />
               </div>
