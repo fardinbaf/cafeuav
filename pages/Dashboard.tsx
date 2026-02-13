@@ -117,7 +117,7 @@ const Dashboard: React.FC<{ role: string }> = ({ role }) => {
     });
   }, [data]);
 
-  if (!data) return <div className="h-screen flex items-center justify-center animate-pulse text-indigo-600 font-black uppercase">Syncing Node...</div>;
+  if (!data) return <div className="h-screen flex items-center justify-center animate-pulse text-indigo-600 font-black uppercase">Syncing Cafe...</div>;
 
   return (
     <div className="space-y-8 animate-premium pb-12">
@@ -162,7 +162,7 @@ const Dashboard: React.FC<{ role: string }> = ({ role }) => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
           <section className="bg-white p-6 lg:p-10 rounded-[40px] border border-slate-100 shadow-xl mx-2 lg:mx-0">
-            <h3 className="text-xl font-black text-slate-800 flex items-center gap-3 mb-8 uppercase"><TrendingUp className="text-indigo-600" /> Stats Node</h3>
+            <h3 className="text-xl font-black text-slate-800 flex items-center gap-3 mb-8 uppercase"><TrendingUp className="text-indigo-600" /> Cafe Stats</h3>
             <div className="w-full" style={{ height: 350, minWidth: 300 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
