@@ -147,7 +147,7 @@ const Sales: React.FC = () => {
   ];
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 min-h-screen lg:h-[calc(100vh-140px)] animate-premium relative pb-24 lg:pb-0">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 min-h-screen lg:h-[calc(vh-140px)] animate-premium relative pb-24 lg:pb-0">
       
       {/* Mobile Sticky Tab Switcher */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-[150] bg-white border-t border-slate-200 p-2 flex gap-2 shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
