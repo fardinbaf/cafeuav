@@ -1,0 +1,9 @@
+# .github/workflows/keep-alive.yml
+on:
+  schedule:
+    - cron: '0 0 */3 * *'   # every 3 days
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl https://bcyzfmvztffqdclmxnix.supabase.co/rest/v1/ -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjeXpmbXZ6dGZmcWRjbG14bml4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAxMTI5NjYsImV4cCI6MjA4NTY4ODk2Nn0.fOtK7Egc2UIJDkCzA_oLWzUMCZ2W87_V9U5zCnJY1Zs"
